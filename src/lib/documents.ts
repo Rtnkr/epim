@@ -65,6 +65,56 @@ export function getNTCDocument(): DocumentRecord | undefined {
   return readManifest().find((d) => d.type === "ntc-excel");
 }
 
+// ── Content cleaner ───────────────────────────────────────────
+// Removes Word/PDF extraction artifacts: non-breaking spaces, ToC blocks,
+// tab+page-number entries, standalone page numbers, and excessive blank lines.
+export function cleanDocContent(raw: string): string {
+  const text = raw
+    .replace(/\xa0/g, " ")   // non-breaking space
+    .replace(/​/g, "")  // zero-width space
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+
+  const lines = text.split("\n");
+
+  // Detect the Table of Contents block
+  let tocStart = -1;
+  let tocEnd = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (tocStart === -1 && /^table of contents$/i.test(t)) tocStart = i;
+    if (tocStart >= 0 && /\t\d+\s*$/.test(lines[i])) tocEnd = i;
+    if (tocStart >= 0 && tocEnd >= 0 && i > tocEnd + 10) break;
+  }
+
+  const result: string[] = [];
+  let blanks = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    // Skip the whole ToC block
+    if (tocStart >= 0 && tocEnd >= 0 && i >= tocStart && i <= tocEnd) continue;
+
+    const t = lines[i].replace(/\xa0/g, " ").trim();
+
+    // Tab + page number anywhere = ToC artifact
+    if (/\t\d+\s*$/.test(lines[i])) continue;
+    // Standalone page numbers (1–3 digits)
+    if (/^\d{1,3}$/.test(t)) continue;
+
+    if (!t) {
+      if (blanks === 0) result.push("");
+      blanks++;
+      continue;
+    }
+    blanks = 0;
+    result.push(t);
+  }
+
+  while (result.length && !result[0]) result.shift();
+  while (result.length && !result[result.length - 1]) result.pop();
+  return result.join("\n");
+}
+
 const MAX_CHARS_PER_DOC = 4000;
 const MAX_DOCS = 3; // send top-3 most relevant docs to stay under Groq's token limit
 
@@ -93,10 +143,11 @@ export function getAllDocumentContent(query?: string): string {
 
   return selected
     .map((d) => {
+      const clean = cleanDocContent(d.content);
       const truncated =
-        d.content.length > MAX_CHARS_PER_DOC
-          ? d.content.slice(0, MAX_CHARS_PER_DOC) + "\n[...truncated]"
-          : d.content;
+        clean.length > MAX_CHARS_PER_DOC
+          ? clean.slice(0, MAX_CHARS_PER_DOC) + "\n[...truncated]"
+          : clean;
       return `=== DOCUMENT: ${d.name} ===\n${truncated}`;
     })
     .join("\n\n");

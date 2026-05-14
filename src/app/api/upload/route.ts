@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { addDocument, DocumentRecord } from "@/lib/documents";
+import { addDocument, cleanDocContent, DocumentRecord } from "@/lib/documents";
 import { parseExcel, excelToText } from "@/lib/excel";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
@@ -80,7 +80,8 @@ export async function POST(req: NextRequest) {
 
     fs.writeFileSync(filePath, buffer);
 
-    const content = await extractText(buffer, file.type, filePath);
+    const rawContent = await extractText(buffer, file.type, filePath);
+    const content = file.type.startsWith("image/") ? rawContent : cleanDocContent(rawContent);
 
     const record: DocumentRecord = {
       id,

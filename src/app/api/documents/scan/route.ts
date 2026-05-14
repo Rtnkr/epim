@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { readManifest, addDocument, DocumentRecord } from "@/lib/documents";
+import { readManifest, addDocument, cleanDocContent, DocumentRecord } from "@/lib/documents";
 import { parseExcel, excelToText } from "@/lib/excel";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
@@ -119,7 +119,8 @@ export async function POST() {
       const stat = fs.statSync(filePath);
 
       try {
-        const content = await extractText(filePath, mimeType);
+        const rawContent = await extractText(filePath, mimeType);
+        const content = mimeType.startsWith("image/") ? rawContent : cleanDocContent(rawContent);
 
         const record: DocumentRecord = {
           id: crypto.randomUUID(),

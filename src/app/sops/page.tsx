@@ -8,6 +8,33 @@ import {
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
+// ─── Client-side content cleaner (mirrors server lib/documents.ts) ─
+function cleanDocContent(raw: string): string {
+  const text = raw.replace(/\xa0/g, " ").replace(/​/g, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = text.split("\n");
+  let tocStart = -1, tocEnd = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (tocStart === -1 && /^table of contents$/i.test(t)) tocStart = i;
+    if (tocStart >= 0 && /\t\d+\s*$/.test(lines[i])) tocEnd = i;
+    if (tocStart >= 0 && tocEnd >= 0 && i > tocEnd + 10) break;
+  }
+  const result: string[] = [];
+  let blanks = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (tocStart >= 0 && tocEnd >= 0 && i >= tocStart && i <= tocEnd) continue;
+    const t = lines[i].replace(/\xa0/g, " ").trim();
+    if (/\t\d+\s*$/.test(lines[i])) continue;
+    if (/^\d{1,3}$/.test(t)) continue;
+    if (!t) { if (blanks === 0) result.push(""); blanks++; continue; }
+    blanks = 0;
+    result.push(t);
+  }
+  while (result.length && !result[0]) result.shift();
+  while (result.length && !result[result.length - 1]) result.pop();
+  return result.join("\n");
+}
+
 interface DocMeta {
   id: string;
   name: string;
@@ -244,9 +271,14 @@ export default function RulesViewerPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const sections = useMemo(
-    () => (selected ? extractSections(selected.content) : []),
+  const cleanedContent = useMemo(
+    () => (selected ? cleanDocContent(selected.content) : ""),
     [selected]
+  );
+
+  const sections = useMemo(
+    () => (selected ? extractSections(cleanedContent) : []),
+    [selected, cleanedContent]
   );
 
   const q = search.trim().toLowerCase();
@@ -257,7 +289,7 @@ export default function RulesViewerPage() {
     const map = new Map<string, Hit[]>();
     for (const doc of docs) {
       const hits: Hit[] = [];
-      for (const line of doc.content.split("\n")) {
+      for (const line of cleanDocContent(doc.content).split("\n")) {
         if (line.toLowerCase().includes(q)) {
           hits.push({ docId: doc.id, docName: doc.name, line });
         }
@@ -450,7 +482,7 @@ export default function RulesViewerPage() {
             </div>
             <div ref={contentRef} className="flex-1 overflow-y-auto px-8 py-7">
               <div className="max-w-2xl">
-                <RenderedDoc content={selected.content} search="" />
+                <RenderedDoc content={cleanedContent} search="" />
               </div>
             </div>
           </>
