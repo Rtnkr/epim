@@ -1,7 +1,7 @@
 import Groq from "groq-sdk";
 
 export const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
+  apiKey: process.env.GROQ_API_KEY ?? "not-set",
 });
 
 // llama-3.3-70b-versatile: 128K context, fast, free on Groq
