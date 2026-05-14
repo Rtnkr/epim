@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# app runtime data (uploaded files + manifest)
+/uploads/
+/data/
+
+# Claude Code internal
+/.claude/
