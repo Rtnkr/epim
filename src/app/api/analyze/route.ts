@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { groq, GROQ_MODEL, GROQ_VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude";
 import { getAllDocumentContent, getNTCDocument } from "@/lib/documents";
-import { parseExcel, excelToText } from "@/lib/excel";
+import { parseExcel } from "@/lib/excel";
 import type { ChatCompletionMessageParam } from "groq-sdk/resources/chat/completions";
 
 async function fetchURLContent(url: string): Promise<string> {
@@ -19,27 +19,22 @@ async function fetchURLContent(url: string): Promise<string> {
     .slice(0, 12000);
 }
 
-function buildNTCContext(query: string): string {
-  const ntcDoc = getNTCDocument();
+async function buildNTCContext(query: string): Promise<string> {
+  const ntcDoc = await getNTCDocument();
   if (!ntcDoc) return "";
   try {
-    const rows = parseExcel(ntcDoc.filePath);
+    const rows = await parseExcel(ntcDoc.filePath);
     if (rows.length === 0) return "";
 
     const headers = Object.keys(rows[0]);
     const queryWords = query.toLowerCase().split(/\W+/).filter((w) => w.length > 2);
 
-    // Score each row by how many query words appear in its values
     const scored = rows.map((row) => {
       const rowText = Object.values(row).join(" ").toLowerCase();
-      const score = queryWords.reduce(
-        (s, w) => s + (rowText.includes(w) ? 1 : 0),
-        0
-      );
+      const score = queryWords.reduce((s, w) => s + (rowText.includes(w) ? 1 : 0), 0);
       return { row, score };
     });
 
-    // Take top 15 matching rows (or first 15 if no matches)
     const top = scored
       .filter((r) => r.score > 0)
       .sort((a, b) => b.score - a.score)
@@ -53,9 +48,7 @@ function buildNTCContext(query: string): string {
     );
 
     return `\n\n=== NTC TABLE (top matches from ${rows.length} rows) ===\n${headerLine}\n${dataLines.join("\n")}\n`;
-  } catch {
-    return "";
-  }
+  } catch { return ""; }
 }
 
 export async function POST(req: NextRequest) {
@@ -64,13 +57,14 @@ export async function POST(req: NextRequest) {
     const { inputText, inputURL, imageBase64, imageMimeType, history } = body;
 
     const queryHint = [inputText, inputURL].filter(Boolean).join(" ");
-    const ruleContent = getAllDocumentContent(queryHint);
-    const ntcContent = buildNTCContext(queryHint);
+    const [ruleContent, ntcContent] = await Promise.all([
+      getAllDocumentContent(queryHint),
+      buildNTCContext(queryHint),
+    ]);
 
     if (!ruleContent && !ntcContent) {
       return NextResponse.json({
-        answer:
-          "No rule documents found. Please go to **Rules** and click **Scan Folder** to register your uploaded documents.",
+        answer: "No rule documents found. Please go to **Manage Docs** and upload your SOP documents.",
       });
     }
 
@@ -78,7 +72,6 @@ export async function POST(req: NextRequest) {
     const hasImage = !!(imageBase64 && imageMimeType);
     const model = hasImage ? GROQ_VISION_MODEL : GROQ_MODEL;
 
-    // Detect whether the user is asking a question or providing product info for attribution
     const textForDetection = (inputText ?? "").trim();
     const isQuestion =
       /[?]/.test(textForDetection) ||
@@ -88,18 +81,14 @@ export async function POST(req: NextRequest) {
     const modeInstruction =
       isQuestion && !hasProductInput
         ? "Answer the question below using the rules."
-        : "Attribute ALL fields for the product information below. Use the full attribution format from your instructions — every field, N through 17.";
+        : "Attribute ALL fields for the product information below. Use the full attribution format — every field, N through 17.";
 
-    // Build the user message content
     let userText = `RULES CONTEXT:\n\n${contextBlock}\n\n---\n\n${modeInstruction}`;
 
     if (inputURL?.trim()) {
       let urlContent = "";
-      try {
-        urlContent = await fetchURLContent(inputURL.trim());
-      } catch {
-        urlContent = `[Could not fetch URL: ${inputURL}]`;
-      }
+      try { urlContent = await fetchURLContent(inputURL.trim()); }
+      catch { urlContent = `[Could not fetch URL: ${inputURL}]`; }
       userText += `\n\nURL: ${inputURL}\nPage content:\n${urlContent}`;
     }
 
@@ -107,12 +96,10 @@ export async function POST(req: NextRequest) {
       userText += `\n\n${inputText.trim()}`;
     }
 
-    // Build messages array
     const messages: ChatCompletionMessageParam[] = [
       { role: "system", content: SYSTEM_PROMPT },
     ];
 
-    // Add conversation history
     if (Array.isArray(history)) {
       for (const msg of history) {
         messages.push({
@@ -122,18 +109,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Add current user message — with or without image
     if (hasImage) {
       messages.push({
         role: "user",
         content: [
           { type: "text", text: userText },
-          {
-            type: "image_url",
-            image_url: {
-              url: `data:${imageMimeType};base64,${imageBase64}`,
-            },
-          },
+          { type: "image_url", image_url: { url: `data:${imageMimeType};base64,${imageBase64}` } },
         ],
       });
     } else {
@@ -152,17 +133,9 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("Analysis error:", message);
-
     if (message.includes("429") || message.includes("rate_limit")) {
-      return NextResponse.json(
-        { error: "Rate limit reached. Please wait a moment and try again." },
-        { status: 429 }
-      );
+      return NextResponse.json({ error: "Rate limit reached. Please wait a moment and try again." }, { status: 429 });
     }
-
-    return NextResponse.json(
-      { error: "Analysis failed: " + message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Analysis failed: " + message }, { status: 500 });
   }
 }
