@@ -4,7 +4,7 @@
 
 ## What this project is
 
-An AI-powered internal tool for a medical device product data specialist at GHX. It reads the user's SOP (Standard Operating Procedure) documents and uses them to:
+An AI-powered internal tool for a medical device product data specialist. It reads the user's SOP (Standard Operating Procedure) documents and uses them to:
 1. Attribute every field (N through 17) for a product given a description, URL, or image
 2. Answer specific rule questions by querying the SOPs
 3. Match products to the right NTC (Noun/Type/Category) from an uploaded Excel sheet
