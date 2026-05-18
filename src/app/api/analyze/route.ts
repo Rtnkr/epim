@@ -136,6 +136,9 @@ export async function POST(req: NextRequest) {
     if (message.includes("429") || message.includes("rate_limit")) {
       return NextResponse.json({ error: "Rate limit reached. Please wait a moment and try again." }, { status: 429 });
     }
+    if (message.includes("401") || message.includes("403") || message.toLowerCase().includes("invalid api key") || message.includes("not-set") || message.toLowerCase().includes("unauthorized")) {
+      return NextResponse.json({ error: "AI not configured — add GROQ_API_KEY in Vercel → Project Settings → Environment Variables, then redeploy." }, { status: 401 });
+    }
     return NextResponse.json({ error: "Analysis failed: " + message }, { status: 500 });
   }
 }

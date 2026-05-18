@@ -77,7 +77,9 @@ async function readManifestBlob(): Promise<DocumentRecord[]> {
     const { blobs } = await list({ prefix: MANIFEST_PATH });
     const found = blobs.find((b) => b.pathname === MANIFEST_PATH);
     if (!found) return [];
-    const res = await fetch(found.url, { cache: "no-store" });
+    // Use downloadUrl — bypasses CDN cache, always gets fresh data
+    const url = (found as { downloadUrl?: string }).downloadUrl ?? found.url;
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return [];
     return await res.json();
   } catch { return []; }
@@ -90,6 +92,7 @@ async function writeManifestBlob(docs: DocumentRecord[]): Promise<void> {
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: "application/json",
+    cacheControlMaxAge: 0,  // don't CDN-cache — manifest changes on every upload/delete
   });
 }
 
